@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>筷子模拟 左右筷完全独立随机版</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: system-ui, sans-serif;
+        }
+        body {
+            background: #f5f7fa;
+            padding-bottom: 30px;
+        }
+        /* 顶部固定栏 */
+        .header-fixed {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            background: #fff;
+            padding: 12px 10px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            z-index: 999;
+        }
+        h1 {
+            text-align: center;
+            font-size: 17px;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        .ctrl-box {
+            text-align: center;
+            margin-bottom: 8px;
+        }
+        button {
+            padding: 7px 14px;
+            font-size: 14px;
+            background: #3498db;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            margin: 0 4px;
+            cursor: pointer;
+        }
+        button:active {
+            background: #2980b9;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            font-size: 13px;
+            color: #333;
+        }
+        .tip {
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+            margin-top: 6px;
+        }
+        .main-wrap {
+            margin-top: 145px;
+            padding: 0 6px;
+        }
+        /* 电脑端网格 */
+        .pair-grid {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            gap: 8px;
+        }
+        /* 手机每行横向滑动 */
+        .scroll-row {
+            display: flex;
+            overflow-x: auto;
+            overflow-y: hidden;
+            gap: 8px;
+            padding: 6px 0;
+            margin-bottom: 10px;
+            -webkit-overflow-scrolling: touch;
+        }
+        .scroll-row::-webkit-scrollbar {
+            height: 3px;
+        }
+        .scroll-row::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 3px;
+        }
+        /* 筷子卡片 */
+        .pair-item {
+            flex: 0 0 130px;
+            background: #fff;
+            border-radius: 8px;
+            padding: 10px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+        }
+        .pair-title {
+            text-align: center;
+            font-weight: bold;
+            color: #e67e22;
+            font-size: 14px;
+            margin-bottom: 6px;
+        }
+        .stick {
+            border-radius: 6px;
+            padding: 6px;
+            margin: 5px 0;
+            font-size: 12px;
+            border: 1px solid #eee;
+        }
+        .stick-left {
+            border-left: 3px solid #3498db;
+        }
+        .stick-right {
+            border-left: 3px solid #27ae60;
+        }
+        .curr {
+            color: #27ae60;
+            margin: 2px 0;
+        }
+        .last {
+            color: #e74c3c;
+            margin: 2px 0;
+        }
+        /* 自适应切换 */
+        @media (max-width: 768px) {
+            .pair-grid { display: none; }
+        }
+        @media (min-width: 769px) {
+            .scroll-container { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header-fixed">
+        <h1>左右单筷完全独立随机模拟</h1>
+        <div class="ctrl-box">
+            <button id="nextRoundBtn">下一轮就餐</button>
+            <button id="resetBtn">重置</button>
+        </div>
+        <div class="stat-row">
+            <div>轮数：<span id="roundNum">0</span></div>
+            <div>自复用次数：<span id="selfCnt">0</span></div>
+            <div>重复率：<span id="rateTxt">0.00%</span></div>
+        </div>
+        <div class="tip">每双左右筷上一轮完全随机不同人、不同性别身份</div>
+    </div>
+
+    <div class="main-wrap">
+        <div class="pair-grid" id="pcContainer"></div>
+        <div class="scroll-container" id="mobileContainer"></div>
+    </div>
+
+    <script>
+        // 基础参数
+        const TOTAL_PEOPLE = 120;
+        const NEED_EAT = 50;
+        const TOTAL_STICK = 100;
+        const PAIR_COUNT = 50;
+
+        let personList = [];
+        let stickList = [];
+        let round = 0;
+        let selfReuseCnt = 0;
+        let totalAssign = 0;
+        let personUsedStick = new Map();
+
+        // 1. 生成120人 师生1:1 男女1:1
+        function initPerson() {
+            personList = [];
+            // 老师20：男10 女10
+            for(let i=1;i<=10;i++) personList.push("男老师"+i);
+            for(let i=1;i<=10;i++) personList.push("女老师"+i);
+            // 学生100：男50 女50
+            for(let i=1;i<=50;i++) personList.push("男学生"+i);
+            for(let i=1;i<=50;i++) personList.push("女学生"+i);
+
+            personList.forEach(p=>personUsedStick.set(p, new Set()));
+        }
+
+        // 2. 初始化100根独立单筷
+        function initStick() {
+            stickList = [];
+            for(let i=1;i<=TOTAL_STICK;i++){
+                stickList.push({
+                    id: "筷"+i.toString().padStart(2,'0'),
+                    lastUser: null,
+                    currUser: null
+                });
+            }
+        }
+
+        // 数组洗牌
+        function shuffle(arr){
+            let a = [...arr];
+            for(let i=a.length-1;i>0;i--){
+                let j = Math.floor(Math.random()*(i+1));
+                [a[i],a[j]] = [a[j],a[i]];
+            }
+            return a;
+        }
+
+        // 随机选50个就餐人员
+        function getRand50Person(){
+            return shuffle(personList).slice(0, NEED_EAT);
+        }
+
+        // 把100根单筷打乱，自由两两组成50双
+        function makeRandomPair(){
+            let shuffledStick = shuffle(stickList);
+            let pairs = [];
+            for(let i=0;i<PAIR_COUNT;i++){
+                pairs.push({
+                    pairId: "第"+(i+1)+"双",
+                    left: shuffledStick[i*2],
+                    right: shuffledStick[i*2+1],
+                    user: null
+                });
+            }
+            return pairs;
+        }
+
+        // 单双卡片HTML
+        function getPairHtml(pair){
+            let L = pair.left;
+            let R = pair.right;
+            return `
+            <div class="pair-item">
+                <div class="pair-title">${pair.pairId}</div>
+                <div class="stick stick-left">
+                    <div>${L.id} 左筷</div>
+                    <div class="curr">当前：${L.currUser||"无人"}</div>
+                    <div class="last">上轮：${L.lastUser||"无记录"}</div>
+                </div>
+                <div class="stick stick-right">
+                    <div>${R.id} 右筷</div>
+                    <div class="curr">当前：${R.currUser||"无人"}</div>
+                    <div class="last">上轮：${R.lastUser||"无记录"}</div>
+                </div>
+            </div>
+            `;
+        }
+
+        // 渲染电脑端
+        function renderPC(pairs) {
+            let wrap = document.getElementById("pcContainer");
+            wrap.innerHTML = "";
+            pairs.forEach(p=> wrap.innerHTML += getPairHtml(p));
+        }
+
+        // 渲染手机端 每行10个横向滑动
+        function renderMobile(pairs) {
+            let wrap = document.getElementById("mobileContainer");
+            wrap.innerHTML = "";
+            for(let row=0;row<5;row++){
+                let rowDiv = document.createElement("div");
+                rowDiv.className = "scroll-row";
+                for(let col=0;col<10;col++){
+                    let idx = row*10 + col;
+                    rowDiv.innerHTML += getPairHtml(pairs[idx]);
+                }
+                wrap.appendChild(rowDiv);
+            }
+        }
+
+        // 新一轮就餐
+        function nextRound(){
+            round++;
+            // 1. 随机50个就餐人
+            let eatPersons = getRand50Person();
+            // 2. 100根单筷彻底打乱，随机两两组成50双
+            let currPairs = makeRandomPair();
+
+            // 3. 分配给50人
+            for(let i=0;i<50;i++){
+                let person = eatPersons[i];
+                let pair = currPairs[i];
+                totalAssign += 2;
+
+                // 左筷更替历史
+                pair.left.lastUser = pair.left.currUser;
+                pair.left.currUser = person;
+                if(personUsedStick.get(person).has(pair.left.id)) selfReuseCnt++;
+                personUsedStick.get(person).add(pair.left.id);
+
+                // 右筷更替历史
+                pair.right.lastUser = pair.right.currUser;
+                pair.right.currUser = person;
+                if(personUsedStick.get(person).has(pair.right.id)) selfReuseCnt++;
+                personUsedStick.get(person).add(pair.right.id);
+            }
+
+            // 更新统计
+            let rate = totalAssign ? (selfReuseCnt/totalAssign*100).toFixed(2) : 0;
+            document.getElementById("roundNum").innerText = round;
+            document.getElementById("selfCnt").innerText = selfReuseCnt;
+            document.getElementById("rateTxt").innerText = rate+"%";
+
+            // 渲染页面
+            renderPC(currPairs);
+            renderMobile(currPairs);
+        }
+
+        // 重置
+        function resetAll(){
+            round = 0;
+            selfReuseCnt = 0;
+            totalAssign = 0;
+            initPerson();
+            initStick();
+            document.getElementById("roundNum").innerText = 0;
+            document.getElementById("selfCnt").innerText = 0;
+            document.getElementById("rateTxt").innerText = "0.00%";
+            renderPC(makeRandomPair());
+            renderMobile(makeRandomPair());
+        }
+
+        // 初始化
+        window.onload = function(){
+            initPerson();
+            initStick();
+            let initPairs = makeRandomPair();
+            renderPC(initPairs);
+            renderMobile(initPairs);
+            document.getElementById("nextRoundBtn").onclick = nextRound;
+            document.getElementById("resetBtn").onclick = resetAll;
+        }
+    </script>
+</body>
+</html>
